@@ -52,13 +52,14 @@ module Loadsmith
       @running = true
       @start_time = Time.now
       config = @runner.config
-      total_users = config.users
+      pool_size = config.users
       spawn_rate = config.spawn_rate
       max_workers = config.workers
 
       puts "Loadsmith starting (ThreadRunner)"
       puts "  Scenario: :#{@runner.scenario_name}"
-      puts "  Users: #{total_users}, Spawn rate: #{spawn_rate}/s (every #{(1.0 / spawn_rate).round(2)}s), Workers: #{max_workers} threads"
+      puts "  User Pool: #{pool_size}, Spawn rate: #{spawn_rate}/s, Concurrent: #{max_workers} threads"
+      puts "  Duration: #{config.duration ? "#{config.duration}s" : "unlimited (until stopped)"}"
       puts "  Target: #{config.base_url}"
       puts ""
 
@@ -69,7 +70,7 @@ module Loadsmith
       spawn_interval = 1.0 / spawn_rate
 
       begin
-        while spawned < total_users && !@stop
+        while spawned < pool_size && !@stop
           # Wait if we've hit worker limit
           while @active_count >= max_workers && !@stop
             sleep 0.05
@@ -78,10 +79,18 @@ module Loadsmith
 
           spawned += 1
           threads << spawn_user(spawned)
-          sleep spawn_interval unless @stop || spawned >= total_users
+          sleep spawn_interval unless @stop || spawned >= pool_size
         end
 
-        threads.each(&:join)
+        # All users spawned — wait until stopped or duration elapsed
+        if config.duration
+          deadline = @start_time + config.duration
+          sleep 0.1 until @stop || Time.now >= deadline
+          @stop = true
+        else
+          sleep 0.1 until @stop
+        end
+        threads.each { _1.join(2) }
       rescue Interrupt
         @stop = true
         puts "\nStopping..."
@@ -128,24 +137,27 @@ module Loadsmith
         @active_users.synchronize { @active_count += 1 }
         @stats.user_started
 
-        ctx = Context.new(user_id: user_id, config: @runner.config)
         executor = Scenario::Executor.new(
           screens: @runner.screens,
           scenarios: @runner.scenarios
         )
 
-        begin
-          @runner.on_start_hook&.call(ctx)
-          executor.execute(@runner.scenarios[@runner.scenario_name], ctx)
-          @runner.on_stop_hook&.call(ctx)
-        rescue StandardError => e
-          ctx.record_scenario_error(ctx.current_screen, "#{e.class}: #{e.message}")
-        ensure
-          ctx.close
-          @stats.record_user(ctx)
-          @stats.user_finished
-          @active_users.synchronize { @active_count -= 1 }
+        while !@stop
+          ctx = Context.new(user_id: user_id, config: @runner.config)
+          begin
+            @runner.on_start_hook&.call(ctx)
+            executor.execute(@runner.scenarios[@runner.scenario_name], ctx)
+            @runner.on_stop_hook&.call(ctx)
+          rescue StandardError => e
+            ctx.record_scenario_error(ctx.current_screen, "#{e.class}: #{e.message}")
+          ensure
+            ctx.close
+            @stats.record_user(ctx)
+          end
         end
+
+        @stats.user_finished
+        @active_users.synchronize { @active_count -= 1 }
       end
     end
 

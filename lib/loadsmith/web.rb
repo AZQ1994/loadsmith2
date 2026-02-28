@@ -57,7 +57,8 @@ module Loadsmith
             base_url: @config.base_url,
             users: @config.users,
             spawn_rate: @config.spawn_rate,
-            workers: @config.workers
+            workers: @config.workers,
+            duration: @config.duration
           }
         })
       end
@@ -81,6 +82,7 @@ module Loadsmith
         @config.users = body["users"].to_i if body["users"].to_i > 0
         @config.spawn_rate = body["spawn_rate"].to_f if body["spawn_rate"].to_f > 0
         @config.workers = body["workers"].to_i if body["workers"].to_i > 0
+        @config.duration = body["duration"].to_i > 0 ? body["duration"].to_i : nil
 
         @state = :running
         runner_obj = Runner.new(
@@ -269,6 +271,7 @@ module Loadsmith
             <label>User Pool<input type="number" id="cfgUsers" min="1"></label>
             <label>Spawn/s<input type="number" id="cfgSpawnRate" min="0.1" step="0.1"></label>
             <label>Concurrent<input type="number" id="cfgWorkers" min="1"></label>
+            <label>Duration(s)<input type="number" id="cfgDuration" min="0" placeholder="∞"></label>
             <div class="btn-group">
               <button id="startBtn" class="btn-start" onclick="startTest()">Start</button>
               <button id="stopBtn" class="btn-stop" onclick="stopTest()" disabled>Stop</button>
@@ -407,6 +410,7 @@ module Loadsmith
           document.getElementById('cfgUsers').value = data.config.users;
           document.getElementById('cfgSpawnRate').value = data.config.spawn_rate;
           document.getElementById('cfgWorkers').value = data.config.workers;
+          if (data.config.duration) document.getElementById('cfgDuration').value = data.config.duration;
           updateState(data.state);
         });
 
@@ -421,6 +425,7 @@ module Loadsmith
           document.getElementById('cfgUsers').disabled = isRunning;
           document.getElementById('cfgSpawnRate').disabled = isRunning;
           document.getElementById('cfgWorkers').disabled = isRunning;
+          document.getElementById('cfgDuration').disabled = isRunning;
         }
 
         function startTest() {
@@ -440,7 +445,8 @@ module Loadsmith
               scenario,
               users: parseInt(document.getElementById('cfgUsers').value) || undefined,
               spawn_rate: parseFloat(document.getElementById('cfgSpawnRate').value) || undefined,
-              workers: parseInt(document.getElementById('cfgWorkers').value) || undefined
+              workers: parseInt(document.getElementById('cfgWorkers').value) || undefined,
+              duration: parseInt(document.getElementById('cfgDuration').value) || undefined
             })
           }).then(r => r.json()).then(data => {
             if (data.state === 'running') {
