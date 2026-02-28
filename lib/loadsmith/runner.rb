@@ -182,19 +182,19 @@ module Loadsmith
 
     def run
       config = @runner.config
-      total_users = config.users
+      pool_size = config.users
       spawn_rate = config.spawn_rate
       num_workers = config.workers
       scenario_name = @runner.scenario_name
 
       puts "Loadsmith starting (RactorRunner)"
       puts "  Scenario: :#{scenario_name}"
-      puts "  Users: #{total_users}, Spawn rate: #{spawn_rate}/s (every #{(1.0 / spawn_rate).round(2)}s), Workers: #{num_workers} Ractors"
+      puts "  User Pool: #{pool_size}, Spawn rate: #{spawn_rate}/s, Concurrent: #{num_workers} Ractors"
+      puts "  Duration: #{config.duration ? "#{config.duration}s" : "unlimited (until stopped)"}"
       puts "  Target: #{config.base_url}"
       puts ""
 
       stats_port = Ractor::Port.new
-      done_port = Ractor::Port.new
 
       # Prepare shareable data
       screens = prepare_screens
@@ -205,23 +205,28 @@ module Loadsmith
       on_start_hook = @runner.on_start_hook ? Ractor.shareable_proc(&@runner.on_start_hook) : nil
       on_stop_hook = @runner.on_stop_hook ? Ractor.shareable_proc(&@runner.on_stop_hook) : nil
 
-      # Launch worker Ractors
-      workers = num_workers.times.map do
-        Ractor.new(screens, scenarios, config_data, scenario_name_frozen,
-                   stats_port, done_port,
-                   on_start_hook, on_stop_hook) do |scr, scns, cfg, sc_name, sp, dp, on_s, on_e|
+      # Launch worker Ractors — each loops its scenario until :stop
+      workers = pool_size.times.map do |i|
+        user_id = i + 1
+        Ractor.new(user_id, screens, scenarios, config_data, scenario_name_frozen,
+                   stats_port,
+                   on_start_hook, on_stop_hook) do |uid, scr, scns, cfg, sc_name, sp, on_s, on_e|
+          # Wait for :start signal
+          Ractor.receive
+
+          executor = Loadsmith::Scenario::Executor.new(screens: scr, scenarios: scns)
+
           loop do
-            msg = Ractor.receive
+            # Check for :stop (non-blocking)
+            msg = Ractor.receive_if { |m| m == :stop } rescue nil
             break if msg == :stop
 
-            user_id = msg
             config_obj = Loadsmith::Configuration.new
             config_obj.base_url = cfg[:base_url]
             config_obj.open_timeout = cfg[:open_timeout]
             config_obj.read_timeout = cfg[:read_timeout]
 
-            ctx = Loadsmith::Context.new(user_id: user_id, config: config_obj)
-            executor = Loadsmith::Scenario::Executor.new(screens: scr, scenarios: scns)
+            ctx = Loadsmith::Context.new(user_id: uid, config: config_obj)
 
             begin
               on_s&.call(ctx)
@@ -233,56 +238,55 @@ module Loadsmith
               ctx.close
             end
 
-            sp.send(ctx.metrics + [{ __user_done__: true }])
-            dp.send(user_id)
+            sp.send(ctx.metrics)
           end
+
+          sp.send(:done)
         end
       end
 
       # Stats collector thread
+      active_count = pool_size
       stats_thread = Thread.new do
         loop do
           metrics = stats_port.receive
-          break if metrics == :stop
-
-          @stats.user_started
-          metrics.each do |m|
-            next if m.key?(:__user_done__)
-            @stats.record_metric(m)
+          if metrics == :stop
+            break
+          elsif metrics == :done
+            active_count -= 1
+            @stats.user_finished
+            next
           end
-          @stats.user_finished
+
+          metrics.each { |m| @stats.record_metric(m) }
         end
       end
 
-      # Spawn users
+      # Spawn users at configured rate
       start_time = Time.now
-      spawned = 0
-      finished = 0
-      worker_idx = 0
+      spawn_interval = 1.0 / spawn_rate
 
       monitor = Thread.new do
         loop do
           sleep 1
           elapsed = (Time.now - start_time).to_i
-          active = spawned - finished
-          @stats.print_live(elapsed, active, total_users)
+          @stats.print_live(elapsed, active_count, pool_size)
         end
       end
 
-      spawn_interval = 1.0 / spawn_rate
-
       begin
-        while spawned < total_users
-          spawned += 1
-          workers[worker_idx % num_workers].send(spawned)
-          worker_idx += 1
-          sleep spawn_interval unless spawned >= total_users
+        workers.each_with_index do |w, i|
+          @stats.user_started
+          w.send(:start)
+          sleep spawn_interval unless i == workers.size - 1
         end
 
-        # Wait for all to complete
-        while finished < total_users
-          done_port.receive
-          finished += 1
+        # Wait until stopped or duration elapsed
+        if config.duration
+          deadline = start_time + config.duration
+          sleep 0.1 until Time.now >= deadline
+        else
+          sleep 0.1 until false  # Wait for Interrupt
         end
       rescue Interrupt
         puts "\nStopping..."
