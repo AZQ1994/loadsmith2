@@ -244,4 +244,8 @@ end
 
 # ─── Run ─────────────────────────────────────────────
 
-Loadsmith.run :main
+if ARGV.include?("--web")
+  Loadsmith.serve(port: 8089)
+else
+  Loadsmith.run :main
+end

@@ -84,6 +84,30 @@ module Loadsmith
       end
     end
 
+    # Returns a snapshot of current metrics for the web UI (SSE streaming).
+    # Clears interval_metrics, just like print_live does.
+    def snapshot(elapsed: 0, active_users: 0, total_users: 0)
+      @mutex.synchronize do
+        interval = @interval_metrics.dup
+        @interval_metrics.clear
+        {
+          rps: interval.size,
+          error_count: interval.count { _1[:error] || (_1[:status] && _1[:status] >= 400) },
+          total_requests: @metrics.size,
+          total_errors: @metrics.count { _1[:error] || (_1[:status] && _1[:status] >= 400) },
+          elapsed: elapsed,
+          active_users: active_users,
+          total_users: total_users,
+          finished_users: @total_finished,
+          endpoints: build_interval_endpoints(interval),
+          cumulative_endpoints: build_cumulative_endpoints,
+          recent_errors: @scenario_errors.last(5).map { |e|
+            { user_id: e[:user_id], screen: e[:screen]&.to_s, message: e[:message] }
+          }
+        }
+      end
+    end
+
     def finalize(duration)
       @duration = duration
     end
@@ -175,6 +199,43 @@ module Loadsmith
       return 0 if sorted_array.empty?
       idx = [(sorted_array.size * pct / 100.0).ceil - 1, 0].max
       sorted_array[idx] || 0
+    end
+
+    def build_interval_endpoints(interval)
+      interval.group_by { |m| "#{m[:method].to_s.upcase.ljust(6)} #{m[:path]}" }
+        .sort_by { |k, _| k }
+        .map do |key, reqs|
+          latencies = reqs.filter_map { _1[:latency_ms] }.sort
+          err = reqs.count { _1[:error] || (_1[:status] && _1[:status] >= 400) }
+          {
+            name: key,
+            count: reqs.size,
+            avg: latencies.empty? ? 0 : (latencies.sum / latencies.size).round(1),
+            p95: percentile(latencies, 95).round(1),
+            p99: percentile(latencies, 99).round(1),
+            errors: err
+          }
+        end
+    end
+
+    def build_cumulative_endpoints
+      @metrics.group_by { |m| "#{m[:method].to_s.upcase.ljust(6)} #{m[:path]}" }
+        .sort_by { |k, _| k }
+        .map do |key, reqs|
+          latencies = reqs.filter_map { _1[:latency_ms] }.sort
+          err = reqs.count { _1[:error] || (_1[:status] && _1[:status] >= 400) }
+          {
+            name: key,
+            count: reqs.size,
+            avg: latencies.empty? ? 0 : (latencies.sum / latencies.size).round(1),
+            min: latencies.first || 0,
+            max: latencies.last || 0,
+            p50: percentile(latencies, 50).round(1),
+            p95: percentile(latencies, 95).round(1),
+            p99: percentile(latencies, 99).round(1),
+            errors: err
+          }
+        end
     end
 
     def build_endpoint_summary

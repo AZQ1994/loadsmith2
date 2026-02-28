@@ -35,15 +35,22 @@ module Loadsmith
 
   # Thread-based runner. Works on all Ruby versions.
   class ThreadRunner
-    def initialize(runner)
+    attr_reader :stats
+
+    def initialize(runner, web_mode: false)
       @runner = runner
       @stats = Stats.new
       @active_users = Mutex.new
       @active_count = 0
       @stop = false
+      @running = false
+      @start_time = nil
+      @web_mode = web_mode
     end
 
     def run
+      @running = true
+      @start_time = Time.now
       config = @runner.config
       total_users = config.users
       spawn_rate = config.spawn_rate
@@ -55,8 +62,7 @@ module Loadsmith
       puts "  Target: #{config.base_url}"
       puts ""
 
-      start_time = Time.now
-      monitor = start_monitor(start_time)
+      monitor = @web_mode ? nil : start_monitor(@start_time)
       threads = []
       spawned = 0
 
@@ -85,9 +91,34 @@ module Loadsmith
         monitor&.kill
       end
 
-      @stats.finalize(Time.now - start_time)
-      @stats.print_summary
+      @stats.finalize(Time.now - @start_time)
+      @stats.print_summary unless @web_mode
       @stats.save_to_file
+      @running = false
+    end
+
+    # Run the load test in a background thread. Returns immediately.
+    def start_async(&on_complete)
+      Thread.new do
+        run
+        on_complete&.call
+      end
+    end
+
+    def stop
+      @stop = true
+    end
+
+    def running?
+      @running
+    end
+
+    def active_count
+      @active_count
+    end
+
+    def elapsed
+      @start_time ? (Time.now - @start_time).to_i : 0
     end
 
     private

@@ -84,6 +84,18 @@ module Loadsmith
       runner.run
     end
 
+    def serve(port: 8089)
+      require_relative "loadsmith/web"
+      Web::Server.new(
+        screens: screens,
+        scenarios: scenarios,
+        config: configuration,
+        on_start_hook: on_start_hook,
+        on_stop_hook: on_stop_hook,
+        port: port
+      ).start
+    end
+
     def reset!
       @configuration = Configuration.new
       @screens = {}

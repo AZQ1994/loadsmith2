@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "test-server",
+      "runtimeExecutable": "ruby",
+      "runtimeArgs": ["bin/test_server"],
+      "port": 8080
+    },
+    {
+      "name": "loadsmith-web",
+      "runtimeExecutable": "ruby",
+      "runtimeArgs": ["example/sample_test.rb", "--web"],
+      "port": 8089
+    }
+  ]
+}
