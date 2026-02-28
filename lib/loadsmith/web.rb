@@ -190,12 +190,14 @@ module Loadsmith
 
         .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
 
-        .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
-        .controls select, .controls input { background: #21262d; color: #e1e4e8; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 14px; }
+        .controls { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; }
+        .controls select, .controls input { background: #21262d; color: #e1e4e8; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; font-size: 14px; height: 38px; }
+        .controls select { height: 38px; }
         .controls input { width: 80px; text-align: center; }
         .controls input:disabled, .controls select:disabled { opacity: 0.5; cursor: not-allowed; }
         .controls label { font-size: 12px; color: #8b949e; display: flex; flex-direction: column; gap: 4px; }
-        .controls button { padding: 8px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: background 0.2s; }
+        .controls button { padding: 8px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: background 0.2s; height: 38px; }
+        .btn-group { display: flex; gap: 8px; align-items: flex-end; }
         .btn-start { background: #238636; color: #fff; }
         .btn-start:hover { background: #2ea043; }
         .btn-start:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
@@ -203,7 +205,7 @@ module Loadsmith
         .btn-stop:hover { background: #f85149; }
         .btn-stop:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
 
-        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
         .card .label { font-size: 12px; color: #8b949e; text-transform: uppercase; margin-bottom: 4px; }
         .card .value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -250,12 +252,14 @@ module Loadsmith
 
         <div class="container">
           <div class="controls">
-            <select id="scenarioSelect"></select>
-            <label>Users<input type="number" id="cfgUsers" min="1"></label>
-            <label>Spawn Rate<input type="number" id="cfgSpawnRate" min="0.1" step="0.1"></label>
-            <label>Workers<input type="number" id="cfgWorkers" min="1"></label>
-            <button id="startBtn" class="btn-start" onclick="startTest()">Start</button>
-            <button id="stopBtn" class="btn-stop" onclick="stopTest()" disabled>Stop</button>
+            <label>Scenario<select id="scenarioSelect"></select></label>
+            <label>User Pool<input type="number" id="cfgUsers" min="1"></label>
+            <label>Spawn/s<input type="number" id="cfgSpawnRate" min="0.1" step="0.1"></label>
+            <label>Concurrent<input type="number" id="cfgWorkers" min="1"></label>
+            <div class="btn-group">
+              <button id="startBtn" class="btn-start" onclick="startTest()">Start</button>
+              <button id="stopBtn" class="btn-stop" onclick="stopTest()" disabled>Stop</button>
+            </div>
           </div>
 
           <div class="cards">
