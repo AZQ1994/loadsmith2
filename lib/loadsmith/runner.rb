@@ -51,7 +51,7 @@ module Loadsmith
 
       puts "Loadsmith starting (ThreadRunner)"
       puts "  Scenario: :#{@runner.scenario_name}"
-      puts "  Users: #{total_users}, Spawn rate: #{spawn_rate}/s, Workers: #{max_workers} threads"
+      puts "  Users: #{total_users}, Spawn rate: #{spawn_rate}/s (every #{(1.0 / spawn_rate).round(2)}s), Workers: #{max_workers} threads"
       puts "  Target: #{config.base_url}"
       puts ""
 
@@ -60,22 +60,19 @@ module Loadsmith
       threads = []
       spawned = 0
 
+      spawn_interval = 1.0 / spawn_rate
+
       begin
         while spawned < total_users && !@stop
-          # Spawn up to spawn_rate users per second
-          batch = [spawn_rate, total_users - spawned].min
-          batch.times do
-            # Wait if we've hit worker limit
-            while @active_count >= max_workers && !@stop
-              sleep 0.05
-            end
-            break if @stop
-
-            spawned += 1
-            user_id = spawned
-            threads << spawn_user(user_id)
+          # Wait if we've hit worker limit
+          while @active_count >= max_workers && !@stop
+            sleep 0.05
           end
-          sleep 1 unless @stop
+          break if @stop
+
+          spawned += 1
+          threads << spawn_user(spawned)
+          sleep spawn_interval unless @stop || spawned >= total_users
         end
 
         threads.each(&:join)
@@ -149,7 +146,7 @@ module Loadsmith
 
       puts "Loadsmith starting (RactorRunner)"
       puts "  Scenario: :#{scenario_name}"
-      puts "  Users: #{total_users}, Spawn rate: #{spawn_rate}/s, Workers: #{num_workers} Ractors"
+      puts "  Users: #{total_users}, Spawn rate: #{spawn_rate}/s (every #{(1.0 / spawn_rate).round(2)}s), Workers: #{num_workers} Ractors"
       puts "  Target: #{config.base_url}"
       puts ""
 
@@ -229,15 +226,14 @@ module Loadsmith
         end
       end
 
+      spawn_interval = 1.0 / spawn_rate
+
       begin
         while spawned < total_users
-          batch = [spawn_rate, total_users - spawned].min
-          batch.times do
-            spawned += 1
-            workers[worker_idx % num_workers].send(spawned)
-            worker_idx += 1
-          end
-          sleep 1
+          spawned += 1
+          workers[worker_idx % num_workers].send(spawned)
+          worker_idx += 1
+          sleep spawn_interval unless spawned >= total_users
         end
 
         # Wait for all to complete
