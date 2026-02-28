@@ -69,7 +69,8 @@ module Loadsmith
         end
 
         body = JSON.parse(req.body || "{}")
-        scenario_name = (body["scenario"] || @scenarios.keys.first).to_sym
+        default_scenario = @scenarios.key?(:main) ? :main : @scenarios.keys.first
+        scenario_name = (body["scenario"] || default_scenario).to_sym
 
         unless @scenarios.key?(scenario_name)
           json_response(res, { error: "Unknown scenario: #{scenario_name}" }, status: 400)
@@ -180,7 +181,7 @@ module Loadsmith
 
         .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
         .header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; display: flex; align-items: center; gap: 10px; }
-        .logo { width: 28px; height: 28px; }
+        .logo { width: 32px; height: 32px; }
         .state-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
         .state-idle { background: #30363d; color: #8b949e; }
         .state-running { background: #0d419d; color: #58a6ff; animation: pulse 2s infinite; }
@@ -241,11 +242,23 @@ module Loadsmith
 
         <div class="header">
           <h1>
-            <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="50" cy="50" r="46" stroke="#58a6ff" stroke-width="4" fill="#0d1117"/>
-              <path d="M55 18L30 55h18L42 82l30-40H52L55 18z" fill="#58a6ff"/>
+            <svg class="logo" viewBox="0 0 512 512" shape-rendering="geometricPrecision">
+              <g transform="translate(0,50)">
+                <defs>
+                  <linearGradient id="anvilGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#8b949e"/>
+                    <stop offset="100%" stop-color="#555d66"/>
+                  </linearGradient>
+                </defs>
+                <path d="M24 135L52 201 178 243 178 298 105 322 106 375 194 375 215 340 296 340 318 375 406 375 406 321 333 298 178 117 149 117 149 135Z" fill="url(#anvilGrad)"/>
+                <polygon points="345,25 279,117 345,283 411,117" fill="#CC342D"/>
+                <polygon points="257,25 345,25 279,117 201,117" fill="#B52A23"/>
+                <polygon points="433,25 345,25 411,117 489,117" fill="#B52A23"/>
+                <polygon points="201,117 279,117 345,283" fill="#E14A42"/>
+                <polygon points="489,117 411,117 345,283" fill="#8F1B16"/>
+              </g>
             </svg>
-            Loadsmith
+            <span>LOAD<span style="color:#E63946">SMITH</span></span>
           </h1>
           <span id="stateBadge" class="state-badge state-idle">IDLE</span>
         </div>
@@ -388,6 +401,7 @@ module Loadsmith
             const opt = document.createElement('option');
             opt.value = s;
             opt.textContent = ':' + s;
+            if (s === 'main') opt.selected = true;
             sel.appendChild(opt);
           });
           document.getElementById('cfgUsers').value = data.config.users;
