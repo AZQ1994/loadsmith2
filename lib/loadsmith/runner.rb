@@ -40,49 +40,41 @@ module Loadsmith
     def initialize(runner, web_mode: false)
       @runner = runner
       @stats = Stats.new
-      @active_users = Mutex.new
+      @mu = Mutex.new
       @active_count = 0
       @stop = false
       @running = false
       @start_time = nil
       @web_mode = web_mode
+
+      # Dynamic scaling state
+      @target_pool = 0
+      @spawn_rate = runner.config.spawn_rate
+      @spawned = 0
+      @threads = []
     end
 
     def run
       @running = true
       @start_time = Time.now
       config = @runner.config
-      pool_size = config.users
-      spawn_rate = config.spawn_rate
-      max_workers = config.workers
+      @target_pool = config.users
+      @spawn_rate = config.spawn_rate
 
       puts "Loadsmith starting (ThreadRunner)"
       puts "  Scenario: :#{@runner.scenario_name}"
-      puts "  User Pool: #{pool_size}, Spawn rate: #{spawn_rate}/s, Concurrent: #{max_workers} threads"
+      puts "  User Pool: #{@target_pool}, Spawn rate: #{@spawn_rate}/s, Concurrent: #{config.workers} threads"
       puts "  Duration: #{config.duration ? "#{config.duration}s" : "unlimited (until stopped)"}"
       puts "  Target: #{config.base_url}"
       puts ""
 
       monitor = @web_mode ? nil : start_monitor(@start_time)
-      threads = []
-      spawned = 0
 
-      spawn_interval = 1.0 / spawn_rate
+      # Scaler thread: continuously adjusts pool to match @target_pool
+      scaler = Thread.new { run_scaler }
 
       begin
-        while spawned < pool_size && !@stop
-          # Wait if we've hit worker limit
-          while @active_count >= max_workers && !@stop
-            sleep 0.05
-          end
-          break if @stop
-
-          spawned += 1
-          threads << spawn_user(spawned)
-          sleep spawn_interval unless @stop || spawned >= pool_size
-        end
-
-        # All users spawned — wait until stopped or duration elapsed
+        # Wait until stopped or duration elapsed
         if config.duration
           deadline = @start_time + config.duration
           sleep 0.1 until @stop || Time.now >= deadline
@@ -90,13 +82,14 @@ module Loadsmith
         else
           sleep 0.1 until @stop
         end
-        threads.each { _1.join(2) }
+        @threads.each { _1.join(2) }
       rescue Interrupt
         @stop = true
         puts "\nStopping..."
-        threads.each { _1.join(2) }
+        @threads.each { _1.join(2) }
       ensure
         @stop = true
+        scaler&.kill
         monitor&.kill
       end
 
@@ -130,11 +123,36 @@ module Loadsmith
       @start_time ? (Time.now - @start_time).to_i : 0
     end
 
+    # --- Dynamic scaling (callable mid-test) ---
+
+    def update_pool(target)
+      @target_pool = target
+    end
+
+    def update_spawn_rate(rate)
+      @spawn_rate = rate
+    end
+
     private
+
+    def run_scaler
+      until @stop
+        current = @active_count
+
+        if @spawned < @target_pool
+          # Scale UP: spawn more users
+          @spawned += 1
+          @threads << spawn_user(@spawned)
+          sleep(1.0 / @spawn_rate) unless @spawned >= @target_pool
+        else
+          sleep 0.1
+        end
+      end
+    end
 
     def spawn_user(user_id)
       Thread.new do
-        @active_users.synchronize { @active_count += 1 }
+        @mu.synchronize { @active_count += 1 }
         @stats.user_started
 
         executor = Scenario::Executor.new(
@@ -143,6 +161,9 @@ module Loadsmith
         )
 
         while !@stop
+          # Scale down: if more active users than target, this user exits
+          break if @active_count > @target_pool
+
           ctx = Context.new(user_id: user_id, config: @runner.config)
           begin
             @runner.on_start_hook&.call(ctx)
@@ -157,7 +178,7 @@ module Loadsmith
         end
 
         @stats.user_finished
-        @active_users.synchronize { @active_count -= 1 }
+        @mu.synchronize { @active_count -= 1 }
       end
     end
 

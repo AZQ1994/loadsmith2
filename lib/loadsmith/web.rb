@@ -41,6 +41,7 @@ module Loadsmith
         @server.mount_proc("/api/status") { |req, res| handle_status(req, res) }
         @server.mount_proc("/api/start") { |req, res| handle_start(req, res) }
         @server.mount_proc("/api/stop") { |req, res| handle_stop(req, res) }
+        @server.mount_proc("/api/config") { |req, res| handle_config(req, res) }
         @server.mount_proc("/api/stream") { |req, res| handle_stream(req, res) }
       end
 
@@ -109,6 +110,18 @@ module Loadsmith
 
         @runner.stop
         json_response(res, { state: "stopping" })
+      end
+
+      def handle_config(req, res)
+        if @state != :running || @runner.nil?
+          json_response(res, { error: "No test running" }, status: 409)
+          return
+        end
+
+        body = JSON.parse(req.body || "{}")
+        @runner.update_pool(body["users"].to_i) if body["users"].to_i > 0
+        @runner.update_spawn_rate(body["spawn_rate"].to_f) if body["spawn_rate"].to_f > 0
+        json_response(res, { users: body["users"], spawn_rate: body["spawn_rate"] })
       end
 
       def handle_stream(_req, res)
@@ -422,8 +435,7 @@ module Loadsmith
           document.getElementById('startBtn').disabled = isRunning;
           document.getElementById('stopBtn').disabled = !isRunning;
           document.getElementById('scenarioSelect').disabled = isRunning;
-          document.getElementById('cfgUsers').disabled = isRunning;
-          document.getElementById('cfgSpawnRate').disabled = isRunning;
+          // User Pool and Spawn/s stay enabled during running (dynamic scaling)
           document.getElementById('cfgWorkers').disabled = isRunning;
           document.getElementById('cfgDuration').disabled = isRunning;
         }
@@ -527,6 +539,25 @@ module Loadsmith
           d.textContent = s;
           return d.innerHTML;
         }
+
+        // Dynamic scaling: send config updates mid-test
+        let configTimer = null;
+        function sendConfigUpdate() {
+          if (document.getElementById('stateBadge').textContent !== 'RUNNING') return;
+          clearTimeout(configTimer);
+          configTimer = setTimeout(() => {
+            fetch('/api/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                users: parseInt(document.getElementById('cfgUsers').value) || undefined,
+                spawn_rate: parseFloat(document.getElementById('cfgSpawnRate').value) || undefined
+              })
+            });
+          }, 300);
+        }
+        document.getElementById('cfgUsers').addEventListener('input', sendConfigUpdate);
+        document.getElementById('cfgSpawnRate').addEventListener('input', sendConfigUpdate);
         </script>
         </body>
         </html>
