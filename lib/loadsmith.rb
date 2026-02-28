@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "loadsmith/response"
 require_relative "loadsmith/scenario"
 require_relative "loadsmith/context"
+require_relative "loadsmith/access"
 require_relative "loadsmith/runner"
 require_relative "loadsmith/stats"
 

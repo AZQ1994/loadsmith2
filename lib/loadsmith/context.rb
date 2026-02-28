@@ -91,11 +91,11 @@ module Loadsmith
 
       metric_path = name || path
       start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      response = http_client.request(req)
+      raw_response = http_client.request(req)
       latency_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round(1)
 
-      record_metric(method, metric_path, response.code.to_i, latency_ms, nil)
-      response
+      record_metric(method, metric_path, raw_response.code.to_i, latency_ms, nil)
+      Response.new(raw_response)
     rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED,
            Errno::ECONNRESET, SocketError, EOFError => e
       latency_ms = if start_time
@@ -103,7 +103,7 @@ module Loadsmith
                    end
       record_metric(method, metric_path || path, nil, latency_ms, e.class.name)
       @http = nil # Reset connection on error
-      nil
+      Response.new(nil, error: e.class.name)
     end
 
     def build_uri(path, params)

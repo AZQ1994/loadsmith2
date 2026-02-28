@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# ソシャゲ風テストサーバー
-# カード収集ゲームのAPIをシミュレート
+# Mobile game-style test server
+# Simulates a card collection game API
 
 require "webrick"
 require "json"
@@ -29,7 +29,7 @@ def authenticate(req)
 end
 
 RARITIES = %w[N N N R R SR SSR].freeze
-CARD_NAMES = %w[炎龍 氷姫 雷獣 風鳥 地霊 光聖 闇影 水蛇 鋼鉄 森精].freeze
+CARD_NAMES = %w[FireDragon IceQueen ThunderBeast WindBird EarthSpirit LightSaint DarkShadow WaterSerpent SteelKnight ForestFairy].freeze
 
 # --- Auth ---
 
@@ -55,14 +55,14 @@ server.mount_proc "/api/home" do |req, res|
   sleep(rand(0.02..0.06))
   json_response(res, {
     announcements: [
-      { id: 1, title: "メンテナンスのお知らせ", date: "2026-02-28" },
-      { id: 2, title: "新ガチャ追加！", date: "2026-02-27" }
+      { id: 1, title: "Scheduled Maintenance Notice", date: "2026-02-28" },
+      { id: 2, title: "New Gacha Banner Added!", date: "2026-02-27" }
     ],
     banners: [
       { id: 1, image: "/img/banner_gacha.png", link: "/gacha" },
       { id: 2, image: "/img/banner_event.png", link: "/event" }
     ],
-    daily_login: { day: 7, reward: "SR確定チケット" }
+    daily_login: { day: 7, reward: "SR Guaranteed Ticket" }
   })
 end
 
@@ -71,7 +71,7 @@ server.mount_proc "/api/home/notifications" do |req, res|
   json_response(res, {
     unread: rand(0..5),
     items: (1..3).map { |i|
-      { id: i, type: %w[gift mission friend].sample, message: "通知 #{i}", read: false }
+      { id: i, type: %w[gift mission friend].sample, message: "Notification #{i}", read: false }
     }
   })
 end
@@ -81,27 +81,26 @@ end
 server.mount_proc "/api/cards" do |req, res|
   sleep(rand(0.05..0.12))
   cards = (1..30).map { |i|
-    { id: i, name: "#{CARD_NAMES[i % 10]}・#{RARITIES.sample}",
+    { id: i, name: "#{CARD_NAMES[i % 10]} #{RARITIES.sample}",
       rarity: RARITIES.sample, level: rand(1..50), power: rand(1000..9999) }
   }
   json_response(res, { cards: cards, total: 30 })
 end
 
-# Card detail - matches /api/cards/123 but NOT /api/cards/enhance etc.
 server.mount_proc "/api/cards/detail" do |req, res|
   sleep(rand(0.03..0.08))
   card_id = req.query["id"]&.to_i || 1
   json_response(res, {
     id: card_id,
-    name: "#{CARD_NAMES[card_id % 10]}・SSR",
+    name: "#{CARD_NAMES[card_id % 10]} SSR",
     rarity: "SSR",
     level: rand(1..99),
     power: rand(5000..15000),
     skills: [
-      { name: "炎の一撃", damage: rand(500..2000), cost: 3 },
-      { name: "守りの盾", defense: rand(300..1000), cost: 2 }
+      { name: "Flame Strike", damage: rand(500..2000), cost: 3 },
+      { name: "Guardian Shield", defense: rand(300..1000), cost: 2 }
     ],
-    lore: "遥か古の時代に封印された伝説のカード。"
+    lore: "A legendary card sealed away in ancient times."
   })
 end
 
@@ -113,7 +112,7 @@ server.mount_proc "/api/cards/enhance" do |req, res|
     success: success,
     card_id: body["card_id"],
     new_level: success ? (body["current_level"].to_i + 1) : body["current_level"],
-    message: success ? "強化成功！" : "強化失敗…"
+    message: success ? "Enhancement succeeded!" : "Enhancement failed..."
   })
 end
 
@@ -123,10 +122,10 @@ server.mount_proc "/api/gacha/lineup" do |req, res|
   sleep(rand(0.03..0.07))
   json_response(res, {
     banners: [
-      { id: 1, name: "炎龍フェス", cost: 300, currency: "gem",
+      { id: 1, name: "FireDragon Festival", cost: 300, currency: "gem",
         rates: { SSR: 3.0, SR: 15.0, R: 40.0, N: 42.0 },
-        featured: [{ name: "炎龍・極", rarity: "SSR", pickup_rate: 0.7 }] },
-      { id: 2, name: "通常ガチャ", cost: 200, currency: "gem",
+        featured: [{ name: "FireDragon EX", rarity: "SSR", pickup_rate: 0.7 }] },
+      { id: 2, name: "Standard Gacha", cost: 200, currency: "gem",
         rates: { SSR: 1.5, SR: 10.0, R: 45.0, N: 43.5 },
         featured: [] }
     ]
@@ -139,7 +138,7 @@ server.mount_proc "/api/gacha/draw" do |req, res|
   count = body["count"]&.to_i || 1
   results = count.times.map {
     rarity = RARITIES.sample
-    { name: "#{CARD_NAMES.sample}・#{rarity}", rarity: rarity, is_new: rand < 0.3 }
+    { name: "#{CARD_NAMES.sample} #{rarity}", rarity: rarity, is_new: rand < 0.3 }
   }
   json_response(res, {
     results: results,
@@ -155,12 +154,12 @@ server.mount_proc "/api/missions" do |req, res|
   json_response(res, {
     daily: (1..5).map { |i|
       prog = rand(0..10)
-      { id: i, title: "デイリーミッション#{i}", progress: prog, goal: 10,
+      { id: i, title: "Daily Mission #{i}", progress: prog, goal: 10,
         completed: prog >= 10, claimed: false,
         reward: { type: "gem", amount: 50 } }
     },
     weekly: (1..3).map { |i|
-      { id: 100 + i, title: "ウィークリー#{i}", progress: rand(0..30), goal: 30,
+      { id: 100 + i, title: "Weekly #{i}", progress: rand(0..30), goal: 30,
         completed: false, claimed: false,
         reward: { type: "ticket", amount: 1 } }
     }
@@ -173,7 +172,7 @@ server.mount_proc "/api/missions/claim" do |req, res|
   json_response(res, {
     mission_id: body["mission_id"],
     reward: { type: "gem", amount: 50 },
-    message: "報酬を受け取りました！"
+    message: "Reward claimed!"
   })
 end
 
@@ -183,12 +182,12 @@ server.mount_proc "/api/shop" do |req, res|
   sleep(rand(0.04..0.10))
   json_response(res, {
     items: [
-      { id: 1, name: "スタミナ回復薬", price: 100, currency: "coin", stock: 99 },
-      { id: 2, name: "強化素材パック", price: 500, currency: "coin", stock: 10 },
-      { id: 3, name: "ジェム×100", price: 980, currency: "yen", stock: nil }
+      { id: 1, name: "Stamina Potion", price: 100, currency: "coin", stock: 99 },
+      { id: 2, name: "Enhancement Pack", price: 500, currency: "coin", stock: 10 },
+      { id: 3, name: "Gems x100", price: 980, currency: "yen", stock: nil }
     ],
     daily_deals: [
-      { id: 10, name: "お得パック", price: 300, currency: "gem", remaining: "12:34:56" }
+      { id: 10, name: "Value Pack", price: 300, currency: "gem", remaining: "12:34:56" }
     ]
   })
 end
@@ -199,30 +198,30 @@ server.mount_proc "/api/shop/buy" do |req, res|
   json_response(res, {
     item_id: body["item_id"],
     success: true,
-    message: "購入しました！"
+    message: "Purchase complete!"
   })
 end
 
 trap("INT") { server.shutdown }
 trap("TERM") { server.shutdown }
 
-puts "=== Loadsmith Test Server (ソシャゲ風API) ==="
+puts "=== Loadsmith Test Server (Mobile Game API) ==="
 puts "http://localhost:8080"
 puts ""
 puts "Endpoints:"
-puts "  POST /api/auth/login          ログイン"
-puts "  POST /api/auth/logout         ログアウト"
-puts "  GET  /api/home                ホーム"
-puts "  GET  /api/home/notifications  通知"
-puts "  GET  /api/cards               カード一覧"
-puts "  GET  /api/cards/detail?id=N   カード詳細"
-puts "  POST /api/cards/enhance       カード強化"
-puts "  GET  /api/gacha/lineup        ガチャラインナップ"
-puts "  POST /api/gacha/draw          ガチャ実行"
-puts "  GET  /api/missions            ミッション一覧"
-puts "  POST /api/missions/claim      報酬受取"
-puts "  GET  /api/shop                ショップ"
-puts "  POST /api/shop/buy            購入"
+puts "  POST /api/auth/login          Login"
+puts "  POST /api/auth/logout         Logout"
+puts "  GET  /api/home                Home"
+puts "  GET  /api/home/notifications  Notifications"
+puts "  GET  /api/cards               Card list"
+puts "  GET  /api/cards/detail?id=N   Card detail"
+puts "  POST /api/cards/enhance       Card enhance"
+puts "  GET  /api/gacha/lineup        Gacha lineup"
+puts "  POST /api/gacha/draw          Gacha draw"
+puts "  GET  /api/missions            Mission list"
+puts "  POST /api/missions/claim      Claim reward"
+puts "  GET  /api/shop                Shop"
+puts "  POST /api/shop/buy            Purchase"
 puts ""
 puts "Ctrl+C to stop"
 server.start

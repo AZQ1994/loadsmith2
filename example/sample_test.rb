@@ -1,15 +1,15 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Loadsmith2 サンプル — ソシャゲ負荷テスト
+# Loadsmith2 Sample — Mobile game load test
 #
-# 起動方法:
+# Usage:
 #   1. ruby bin/test_server
 #   2. ruby example/sample_test.rb
 
 require_relative "../lib/loadsmith"
 
-# ─── 設定 ───────────────────────────────────────────
+# ─── Configuration ────────────────────────────────────
 
 Loadsmith.config do
   self.base_url     = "http://localhost:8080"
@@ -20,84 +20,158 @@ Loadsmith.config do
   self.read_timeout = 15
 end
 
-# ─── 画面定義 ───────────────────────────────────────
+# ─── API Definitions (Access classes) ─────────────────
+
+class Login < Loadsmith::Access
+  post "/api/auth/login"
+
+  def request_json
+    { user_id: "user_#{ctx.user_id}" }
+  end
+
+  def after(res)
+    ctx.default_headers["Authorization"] = "Bearer #{res['token']}" if res.success?
+  end
+end
+
+class Logout < Loadsmith::Access
+  post "/api/auth/logout"
+end
+
+class Home < Loadsmith::Access
+  get "/api/home"
+end
+
+class HomeNotifications < Loadsmith::Access
+  get "/api/home/notifications"
+end
+
+class CardList < Loadsmith::Access
+  get "/api/cards"
+
+  def after(res)
+    ctx.store[:cards] = res["cards"] if res.success?
+  end
+end
+
+class CardDetail < Loadsmith::Access
+  get "/api/cards/detail"
+  name "/api/cards/detail"
+
+  def before
+    @card = ctx.store[:cards]&.sample
+    ctx.store[:current_card] = @card
+  end
+
+  def request_params
+    @card ? { id: @card["id"] } : {}
+  end
+end
+
+class CardEnhance < Loadsmith::Access
+  post "/api/cards/enhance"
+
+  def request_json
+    card = ctx.store[:current_card]
+    { card_id: card["id"], current_level: card["level"] }
+  end
+end
+
+class GachaLineup < Loadsmith::Access
+  get "/api/gacha/lineup"
+
+  def after(res)
+    ctx.store[:gacha_banners] = res["banners"] if res.success?
+  end
+end
+
+class GachaDraw < Loadsmith::Access
+  post "/api/gacha/draw"
+
+  def request_json
+    banner = ctx.store[:gacha_banners]&.first
+    { banner_id: banner["id"], count: [1, 10].sample }
+  end
+end
+
+class MissionList < Loadsmith::Access
+  get "/api/missions"
+
+  def after(res)
+    if res.success?
+      completed = res["daily"]&.select { _1["completed"] && !_1["claimed"] }
+      ctx.store[:claimable_missions] = completed || []
+    end
+  end
+end
+
+class MissionClaim < Loadsmith::Access
+  post "/api/missions/claim"
+
+  def request_json
+    mission = ctx.store[:claimable_missions]&.first
+    { mission_id: mission["id"] }
+  end
+end
+
+class ShopList < Loadsmith::Access
+  get "/api/shop"
+end
+
+class ShopBuy < Loadsmith::Access
+  post "/api/shop/buy"
+
+  def request_json
+    { item_id: 1, quantity: 1 }
+  end
+end
+
+# ─── Screen Definitions ──────────────────────────────
 
 Loadsmith.screen :home do |ctx|
-  ctx.get "/api/home"
-  ctx.get "/api/home/notifications"
+  Home.call(ctx)
+  HomeNotifications.call(ctx)
 end
 
 Loadsmith.screen :card_list do |ctx|
-  res = ctx.get "/api/cards"
-  if res
-    data = JSON.parse(res.body)
-    ctx.store[:cards] = data["cards"]
-  end
+  CardList.call(ctx)
 end
 
 Loadsmith.screen :card_detail do |ctx|
-  card = ctx.store[:cards]&.sample
-  if card
-    ctx.get "/api/cards/detail?id=#{card['id']}", name: "/api/cards/detail"
-    ctx.store[:current_card] = card
-  end
+  CardDetail.call(ctx) if ctx.store[:cards]&.any?
 end
 
 Loadsmith.screen :card_enhance do |ctx|
-  card = ctx.store[:current_card]
-  if card
-    ctx.post "/api/cards/enhance", json: {
-      card_id: card["id"],
-      current_level: card["level"]
-    }
-  end
+  CardEnhance.call(ctx) if ctx.store[:current_card]
 end
 
 Loadsmith.screen :gacha_top do |ctx|
-  res = ctx.get "/api/gacha/lineup"
-  if res
-    data = JSON.parse(res.body)
-    ctx.store[:gacha_banners] = data["banners"]
-  end
+  GachaLineup.call(ctx)
 end
 
 Loadsmith.screen :gacha_draw do |ctx|
-  banner = ctx.store[:gacha_banners]&.first
-  if banner
-    ctx.post "/api/gacha/draw", json: {
-      banner_id: banner["id"],
-      count: [1, 10].sample
-    }
-  end
+  GachaDraw.call(ctx) if ctx.store[:gacha_banners]&.any?
 end
 
 Loadsmith.screen :missions do |ctx|
-  res = ctx.get "/api/missions"
-  if res
-    data = JSON.parse(res.body)
-    completed = data["daily"]&.select { _1["completed"] && !_1["claimed"] }
-    ctx.store[:claimable_missions] = completed || []
-  end
+  MissionList.call(ctx)
 end
 
 Loadsmith.screen :mission_claim do |ctx|
-  mission = ctx.store[:claimable_missions]&.first
-  if mission
-    ctx.post "/api/missions/claim", json: { mission_id: mission["id"] }
-  end
+  MissionClaim.call(ctx) if ctx.store[:claimable_missions]&.any?
 end
 
 Loadsmith.screen :shop do |ctx|
-  ctx.get "/api/shop"
+  ShopList.call(ctx)
 end
 
 Loadsmith.screen :shop_buy do |ctx|
-  ctx.post "/api/shop/buy", json: { item_id: 1, quantity: 1 }
+  ShopBuy.call(ctx)
 end
 
-# ─── サブシナリオ（画面遷移フロー） ─────────────────
+# ─── Sub-scenarios (screen transition flows) ─────────
 
-# カード画面：一覧 → 詳細 → たまに強化
+# Card flow: list -> detail -> sometimes enhance
 Loadsmith.scenario :card_flow do
   visit :card_list
   think 1..2
@@ -109,26 +183,26 @@ Loadsmith.scenario :card_flow do
       visit :card_enhance
     end
     percent 60 do
-      # 眺めるだけ
+      # just browsing
     end
   end
 end
 
-# ガチャフロー：ラインナップ確認 → 引く
+# Gacha flow: check lineup -> draw
 Loadsmith.scenario :gacha_flow do
   visit :gacha_top
   think 1..3
   visit :gacha_draw
 end
 
-# ミッションフロー：確認 → 報酬受取
+# Mission flow: check -> claim rewards
 Loadsmith.scenario :mission_flow do
   visit :missions
   think 0.5..1
   visit :mission_claim
 end
 
-# ショップフロー：閲覧 → たまに購入
+# Shop flow: browse -> sometimes buy
 Loadsmith.scenario :shop_flow do
   visit :shop
   think 1..2
@@ -138,18 +212,18 @@ Loadsmith.scenario :shop_flow do
       visit :shop_buy
     end
     percent 70 do
-      # ウィンドウショッピング
+      # window shopping
     end
   end
 end
 
-# ─── メインシナリオ ─────────────────────────────────
+# ─── Main Scenario ───────────────────────────────────
 
 Loadsmith.scenario :main do
   visit :home
   think 1..3
 
-  # ユーザーは各コンテンツにランダムに遷移する
+  # Users navigate to random content
   choose do
     percent 40, scenario: :card_flow
     percent 25, scenario: :gacha_flow
@@ -158,20 +232,16 @@ Loadsmith.scenario :main do
   end
 end
 
-# ─── ライフサイクル ─────────────────────────────────
+# ─── Lifecycle ───────────────────────────────────────
 
 Loadsmith.on_start do |ctx|
-  res = ctx.post "/api/auth/login", json: { user_id: "user_#{ctx.user_id}" }
-  if res
-    data = JSON.parse(res.body)
-    ctx.default_headers["Authorization"] = "Bearer #{data['token']}"
-  end
+  Login.call(ctx)
 end
 
 Loadsmith.on_stop do |ctx|
-  ctx.post "/api/auth/logout"
+  Logout.call(ctx)
 end
 
-# ─── 実行 ───────────────────────────────────────────
+# ─── Run ─────────────────────────────────────────────
 
 Loadsmith.run :main
